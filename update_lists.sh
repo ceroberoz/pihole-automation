@@ -38,6 +38,12 @@ add_to_list() {
 add_to_list "allow" "top50_allowed.txt"
 add_to_list "deny" "top50_blocked.txt"
 
+# Git versioning
+if [ -d .git ]; then
+    git add --all
+    git commit -m "Auto-update: $(date +"%Y-%m-%d %H:%M")"
+fi
+
 # Update gravity
 pihole updateGravity
 
