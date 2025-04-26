@@ -6,60 +6,71 @@ cd "$SCRIPT_DIR" || exit 1
 
 # Config
 BACKUP_DIR="$SCRIPT_DIR/backups"
-mkdir -p "$BACKUP_DIR"
+LOG_FILE="$SCRIPT_DIR/update.log"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+mkdir -p "$BACKUP_DIR"
 
-# Backup current lists
-echo "Backing up current lists..."
-pihole allow --list > "$BACKUP_DIR/allowlist-$TIMESTAMP.txt"
-pihole deny --list > "$BACKUP_DIR/denylist-$TIMESTAMP.txt"
-
-# Clear existing entries
-echo "Clearing existing dynamic entries..."
-pihole allow --all --exact -d
-pihole deny --all --exact -d
-
-# Add new entries
-echo "Updating lists..."
-add_to_list() {
-    local list_type=$1
-    local input_file=$2
+{
+    echo "=== Starting Pi-hole List Update ==="
+    echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
     
-    # Get total count for percentage calculation
-    total=$(wc -l < "$input_file")
-    current=0
+    # Backup current lists
+    echo -n "Backing up current lists... "
+    pihole allow --list > "$BACKUP_DIR/allowlist-$TIMESTAMP.txt"
+    pihole deny --list > "$BACKUP_DIR/denylist-$TIMESTAMP.txt"
+    echo "Done"
     
-    while IFS= read -r line; do
-        domain=$(echo "$line" | awk '{print $2}')
-        count=$(echo "$line" | awk '{print $1}')
-        if [[ -n "$domain" ]]; then
-            ((current++))
-            progress=$((current * 100 / total))
-            printf "\r[%3d%%] %-50s" "$progress" "$domain"
-            if [[ "$list_type" == "allow" ]]; then
-                pihole allow "$domain" --exact >/dev/null 2>&1
-            else
-                pihole deny "$domain" --exact >/dev/null 2>&1
+    # Clear existing entries
+    echo -n "Clearing previous dynamic entries... "
+    pihole allow --all --exact -d >/dev/null
+    pihole deny --all --exact -d >/dev/null
+    echo "Done"
+    
+    # Add new entries with progress
+    process_domains() {
+        local list_type=$1
+        local input_file=$2
+        local total=$(wc -l < "$input_file")
+        local count=0
+        local last_reported=0
+        
+        echo -n "Updating ${list_type}list: "
+        
+        while IFS= read -r domain; do
+            ((count++))
+            progress=$((count * 100 / total))
+            
+            # Only show progress every 10% or for the last item
+            if (( progress >= last_reported + 10 )) || (( count == total )); then
+                echo -n "${progress}% "
+                last_reported=$progress
             fi
-        fi
-    done < "$input_file"
-    echo "" # New line after progress
-}
+            
+            if [[ "$list_type" == "allow" ]]; then
+                pihole allow "$domain" --exact >/dev/null
+            else
+                pihole deny "$domain" --exact >/dev/null
+            fi
+        done < <(awk '{print $2}' "$input_file")
+        echo "" # New line after progress
+    }
+    
+    # Process lists
+    [[ -f "top50_allowed.txt" ]] && process_domains "allow" "top50_allowed.txt"
+    [[ -f "top50_blocked.txt" ]] && process_domains "deny" "top50_blocked.txt"
+   
+    # Git versioning
+    if [ -d .git ]; then
+        git add --all
+        git commit -m "Update lists at $TIMESTAMP"
+    fi
 
-echo -e "\nAllowlisting domains:"
-add_to_list "allow" "$SCRIPT_DIR/top50_allowed.txt"
-
-echo -e "\nDenylisting domains:"
-add_to_list "deny" "$SCRIPT_DIR/top50_blocked.txt"
-
-# Git versioning
-if [ -d .git ]; then
-    git add --all
-    git commit -m "Update lists at $TIMESTAMP"
-fi
-
-# Update gravity
-echo -e "\nUpdating Pi-hole gravity..."
-pihole updateGravity
-
-echo -e "\nUpdate complete! Backup saved to $BACKUP_DIR"
+    # Update gravity
+    echo -n "Updating gravity... "
+    pihole updateGravity >/dev/null
+    echo "Done"
+    
+    echo "=== Update Completed Successfully ==="
+    echo "Backups saved to: $BACKUP_DIR"
+    echo "Detailed log: $LOG_FILE"
+} | tee -a "$LOG_FILE"
