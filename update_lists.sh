@@ -25,23 +25,31 @@ add_to_list() {
     local list_type=$1
     local input_file=$2
     
+    # Get total count for percentage calculation
+    total=$(wc -l < "$input_file")
+    current=0
+    
     while IFS= read -r line; do
         domain=$(echo "$line" | awk '{print $2}')
+        count=$(echo "$line" | awk '{print $1}')
         if [[ -n "$domain" ]]; then
-            echo "- $domain"
+            ((current++))
+            progress=$((current * 100 / total))
+            printf "\r[%3d%%] %-50s" "$progress" "$domain"
             if [[ "$list_type" == "allow" ]]; then
-                pihole allow "$domain" --exact
+                pihole allow "$domain" --exact >/dev/null 2>&1
             else
-                pihole deny "$domain" --exact
+                pihole deny "$domain" --exact >/dev/null 2>&1
             fi
         fi
     done < "$input_file"
+    echo "" # New line after progress
 }
 
-echo "Allowlisting:"
+echo -e "\nAllowlisting domains:"
 add_to_list "allow" "$SCRIPT_DIR/top50_allowed.txt"
 
-echo "Denylisting:"
+echo -e "\nDenylisting domains:"
 add_to_list "deny" "$SCRIPT_DIR/top50_blocked.txt"
 
 # Git versioning
@@ -51,7 +59,7 @@ if [ -d .git ]; then
 fi
 
 # Update gravity
-echo "Updating Pi-hole gravity..."
+echo -e "\nUpdating Pi-hole gravity..."
 pihole updateGravity
 
-echo "Update complete! Backup saved to $BACKUP_DIR"
+echo -e "\nUpdate complete! Backup saved to $BACKUP_DIR"
