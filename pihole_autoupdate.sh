@@ -1,42 +1,24 @@
 #!/bin/bash
 
-# Configuration
-WORKDIR="/root/pihole-dynamic-domains"
-BACKUP_DIR="$WORKDIR/backups"
-LOG_FILE="$WORKDIR/pihole_update.log"
-TIMESTAMP=$(date +"%Y-%m-%d %T")
+# Get the script's directory (Git repo root)
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+LOG_FILE="$SCRIPT_DIR/update.log"
 
-# Create directories if missing
-mkdir -p "$BACKUP_DIR"
-
-# Start logging
 {
-echo "=== Pi-hole Auto-Update Started at $TIMESTAMP ==="
-
-# Step 1: Analyze traffic
-echo -n "Analyzing traffic... "
-cd "$WORKDIR" || exit 1
-if ! ./analyze_pihole_logs.sh >> "$LOG_FILE" 2>&1; then
-    echo "FAILED!"
-    exit 1
-fi
-echo "OK"
-
-# Step 2: Update lists
-echo -n "Updating lists... "
-if ! ./update_lists.sh >> "$LOG_FILE" 2>&1; then
-    echo "FAILED!"
-    exit 1
-fi
-echo "OK"
-
-# Step 3: Optional - Update Gravity from remote sources
-echo -n "Updating gravity... "
-if ! pihole updateGravity >> "$LOG_FILE" 2>&1; then
-    echo "FAILED!"
-    exit 1
-fi
-echo "OK"
-
-echo "=== Update Completed Successfully ==="
+    echo "=== Pi-hole Dynamic List Update $(date) ==="
+    cd "$SCRIPT_DIR" || exit 1
+    
+    echo "Step 1: Analyzing traffic..."
+    if ! ./analyze_pihole_logs.sh; then
+        echo "Analysis failed!"
+        exit 1
+    fi
+    
+    echo "Step 2: Updating lists..."
+    if ! ./update_lists.sh; then
+        echo "Update failed!"
+        exit 1
+    fi
+    
+    echo "=== Update completed successfully ==="
 } | tee -a "$LOG_FILE"

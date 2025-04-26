@@ -1,24 +1,26 @@
 #!/bin/bash
 
-# Pi-hole v5+ list locations
-WHITELIST="/etc/pihole/whitelist.txt"
-BLACKLIST="/etc/pihole/blacklist.txt"
-GRAVITY_DB="/etc/pihole/gravity.db"
+# Get the script's directory (Git repo root)
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+cd "$SCRIPT_DIR" || exit 1
 
-# Backup current lists with timestamp
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-BACKUP_DIR="/root/pihole-dynamic-domains/backups"
+# Config
+BACKUP_DIR="$SCRIPT_DIR/backups"
 mkdir -p "$BACKUP_DIR"
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 
-# Backup using pihole commands
-pihole allow --list > "$BACKUP_DIR/whitelist-$TIMESTAMP.txt"
-pihole deny --list > "$BACKUP_DIR/blacklist-$TIMESTAMP.txt"
+# Backup current lists
+echo "Backing up current lists..."
+pihole allow --list > "$BACKUP_DIR/allowlist-$TIMESTAMP.txt"
+pihole deny --list > "$BACKUP_DIR/denylist-$TIMESTAMP.txt"
 
-# Clear existing lists using pihole commands
+# Clear existing entries
+echo "Clearing existing dynamic entries..."
 pihole allow --all --exact -d
 pihole deny --all --exact -d
 
-# Add new entries from analyzed files
+# Add new entries
+echo "Updating lists..."
 add_to_list() {
     local list_type=$1
     local input_file=$2
@@ -26,6 +28,7 @@ add_to_list() {
     while IFS= read -r line; do
         domain=$(echo "$line" | awk '{print $2}')
         if [[ -n "$domain" ]]; then
+            echo "- $domain"
             if [[ "$list_type" == "allow" ]]; then
                 pihole allow "$domain" --exact
             else
@@ -35,19 +38,20 @@ add_to_list() {
     done < "$input_file"
 }
 
-add_to_list "allow" "top50_allowed.txt"
-add_to_list "deny" "top50_blocked.txt"
+echo "Allowlisting:"
+add_to_list "allow" "$SCRIPT_DIR/top50_allowed.txt"
+
+echo "Denylisting:"
+add_to_list "deny" "$SCRIPT_DIR/top50_blocked.txt"
 
 # Git versioning
 if [ -d .git ]; then
     git add --all
-    git commit -m "Auto-update: $(date +"%Y-%m-%d %H:%M")"
+    git commit -m "Update lists at $TIMESTAMP"
 fi
 
 # Update gravity
+echo "Updating Pi-hole gravity..."
 pihole updateGravity
 
-echo "Lists updated:"
-echo "- $(wc -l < top50_allowed.txt) domains allowlisted"
-echo "- $(wc -l < top50_blocked.txt) domains denylisted"
-echo "Backups saved to: $BACKUP_DIR"
+echo "Update complete! Backup saved to $BACKUP_DIR"
