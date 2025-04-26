@@ -1,0 +1,13 @@
+# Exclude generated files
+*.log
+backups/
+top50_*.txt
+pihole-FTL.db*
+
+# Exclude system-specific files
+*.bak
+*.tmp
+
+# Exclude IDE files
+.vscode/
+.idea/
